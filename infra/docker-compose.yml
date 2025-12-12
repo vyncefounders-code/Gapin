@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: gapin_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: gapin
+      POSTGRES_PASSWORD: gapin123
+      POSTGRES_DB: gapin
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redpanda:
+    image: vectorized/redpanda:latest
+    container_name: gapin_redpanda
+    command: >
+      redpanda start
+      --overprovisioned
+      --smp 1
+      --memory 1G
+      --reserve-memory 0M
+      --node-id 0
+      --check=false
+    ports:
+      - "9092:9092"
+      - "9644:9644"
+
+volumes:
+  pgdata:
