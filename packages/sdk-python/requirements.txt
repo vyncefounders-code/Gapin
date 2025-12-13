@@ -1,0 +1,6 @@
+requests==2.32.3
+blake3==0.4.1
+
+# Optional later:
+# pydantic==2.6.4
+# onnxruntime==1.17.1
