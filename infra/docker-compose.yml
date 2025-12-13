@@ -15,7 +15,7 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   redpanda:
-    image: docker.redpanda.com/redpanda/redpanda:latest
+    image: docker.redpanda.com/redpandadata/redpanda:v23.3.6
     container_name: gapin_redpanda
     command: >
       redpanda start
