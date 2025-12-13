@@ -1,0 +1,7 @@
+pyproject.toml
+src/gapin_sdk/__init__.py
+src/gapin_sdk_python.egg-info/PKG-INFO
+src/gapin_sdk_python.egg-info/SOURCES.txt
+src/gapin_sdk_python.egg-info/dependency_links.txt
+src/gapin_sdk_python.egg-info/requires.txt
+src/gapin_sdk_python.egg-info/top_level.txt
