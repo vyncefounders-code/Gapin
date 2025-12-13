@@ -1,18 +1,12 @@
 import Fastify from 'fastify';
 import { v4 as uuidv4 } from 'uuid';
-import pg from 'pg';
-import { Kafka } from 'kafkajs'; // Assuming Redpanda is Kafka-compatible
+import { Kafka } from 'kafkajs';
+import pool from './db/client';
+import healthRoutes from './routes/health';
+import { EventPublisher } from './events/publish';
+import { EventConsumer } from './events/consume';
 
 const fastify = Fastify({ logger: true });
-
-// Database connection
-const pool = new pg.Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'gapin',
-  user: process.env.DB_USER || 'gapin',
-  password: process.env.DB_PASSWORD || 'gapin123',
-});
 
 // Kafka client for Redpanda
 const kafka = new Kafka({
@@ -20,22 +14,21 @@ const kafka = new Kafka({
   brokers: [process.env.KAFKA_BROKER || 'localhost:9092'],
 });
 const producer = kafka.producer();
+const consumer = kafka.consumer({ groupId: 'gapin-group' });
 
-// Health check endpoint
-fastify.get('/health', async (request, reply) => {
-  return { status: 'ok', timestamp: new Date().toISOString() };
-});
+const eventPublisher = new EventPublisher(producer);
+const eventConsumer = new EventConsumer(consumer);
+
+// Register routes
+fastify.register(healthRoutes);
 
 // Event publish endpoint
 fastify.post('/events/publish', async (request, reply) => {
   const { topic, message } = request.body as { topic: string; message: any };
   try {
     await producer.connect();
-    await producer.send({
-      topic,
-      messages: [{ value: JSON.stringify(message) }],
-    });
-    return { success: true, eventId: uuidv4() };
+    const result = await eventPublisher.publish(topic, message);
+    return { ...result, eventId: uuidv4() };
   } catch (error) {
     reply.code(500).send({ error: 'Failed to publish event' });
   }
