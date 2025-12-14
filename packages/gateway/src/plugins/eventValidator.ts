@@ -9,7 +9,7 @@ declare module 'fastify' {
 
 const ajv = new Ajv({ allErrors: true, coerceTypes: true });
 
-// AIBBAR event schema (example) - simplified without nullable strict typing
+// Strict AIBBAR event schema: require core fields and disallow unknown props
 const eventSchema = {
   type: 'object',
   properties: {
@@ -21,8 +21,8 @@ const eventSchema = {
     signature: { type: 'string' },
     metadata: { type: 'object' }
   },
-  required: ['event_type', 'timestamp'],
-  additionalProperties: true
+  required: ['event_type', 'timestamp', 'action'],
+  additionalProperties: false
 };
 
 const validate = ajv.compile(eventSchema);

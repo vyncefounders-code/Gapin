@@ -44,8 +44,8 @@ export class EventConsumer {
               this.callback({ topic, ...value });
             }
           } catch (parseError) {
-            // Log parse error; in production, use fastify.log
-            console.error(`Failed to parse message from ${topic}:`, parseError);
+            // Log parse error; in production, use fastify.log if available
+            console.warn(`Failed to parse message from ${topic}:`, parseError);
           }
         },
       });

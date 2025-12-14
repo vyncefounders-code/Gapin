@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import bcrypt from "bcrypt";
 import pool from "../db/client";
 import jwt from 'jsonwebtoken';
+import limiter from '../lib/rateLimiter';
 
 interface RegisterBody {
   email: string;
@@ -31,10 +32,24 @@ export default async function authRoutes(fastify: FastifyInstance) {
             name: { type: "string" }
           }
         }
+      },
+      preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
+        const ip = (request as any).ip || request.headers['x-forwarded-for'] || 'unknown';
+        const WINDOW = parseInt(process.env.AUTH_RATE_LIMIT_WINDOW || '60');
+        const LIMIT = parseInt(process.env.AUTH_RATE_LIMIT_MAX || '5');
+        try {
+          const res = await limiter.increment(`auth:register:${ip}`, WINDOW, LIMIT);
+          reply.header('X-RateLimit-Limit', String(LIMIT));
+          reply.header('X-RateLimit-Remaining', String(res.remaining));
+          reply.header('X-RateLimit-Reset', String(res.reset));
+          if (!res.allowed) return reply.code(429).send({ error: 'Rate limit exceeded' });
+        } catch (e) {
+          request.log.warn({ e }, 'Rate limiter failed for register');
+        }
       }
-    },
+    } as any,
     async (
-      request: FastifyRequest<{ Body: RegisterBody }>,
+      request: FastifyRequest<{ Body: RegisterBody }> ,
       reply: FastifyReply
     ) => {
       const { email, password, name } = request.body;
@@ -87,10 +102,24 @@ export default async function authRoutes(fastify: FastifyInstance) {
             password: { type: "string" }
           }
         }
+      },
+      preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
+        const ip = (request as any).ip || request.headers['x-forwarded-for'] || 'unknown';
+        const WINDOW = parseInt(process.env.AUTH_RATE_LIMIT_WINDOW || '60');
+        const LIMIT = parseInt(process.env.AUTH_RATE_LIMIT_MAX || '10');
+        try {
+          const res = await limiter.increment(`auth:login:${ip}`, WINDOW, LIMIT);
+          reply.header('X-RateLimit-Limit', String(LIMIT));
+          reply.header('X-RateLimit-Remaining', String(res.remaining));
+          reply.header('X-RateLimit-Reset', String(res.reset));
+          if (!res.allowed) return reply.code(429).send({ error: 'Rate limit exceeded' });
+        } catch (e) {
+          request.log.warn({ e }, 'Rate limiter failed for login');
+        }
       }
-    },
+    } as any,
     async (
-      request: FastifyRequest<{ Body: LoginBody }>,
+      request: FastifyRequest<{ Body: LoginBody }> ,
       reply: FastifyReply
     ) => {
       const { email, password } = request.body;
@@ -142,14 +171,20 @@ export default async function authRoutes(fastify: FastifyInstance) {
   ------------------------------------------------------------- */
   fastify.get(
     "/auth/me",
-    { preHandler: fastify.authenticate },
+    { preHandler: (fastify as any).authenticateUser },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const apiKeyInfo = (request as any).apiKey;
+        const user = (request as any).user;
+        if (!user) return reply.code(401).send({ error: 'Not authenticated' });
 
         return reply.send({
           success: true,
-          account: apiKeyInfo
+          account: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            created_at: user.created_at
+          }
         });
       } catch (err) {
         request.log.error(err);

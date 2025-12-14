@@ -13,18 +13,22 @@ const apiKeyValidator: FastifyPluginAsync = async (fastify) => {
     }
 
     try {
-      // Query all active API keys (we need to bcrypt.compare against stored hashes)
+      // Use key preview (first 8 chars) to limit candidate rows and avoid O(n) bcrypt checks
+      const preview = apiKeyHeader.substring(0, 8);
+
       const result = await pool.query(
         `SELECT ak.id, ak.key_hash, ak.user_id, ak.label, ak.is_active, ak.last_used_at
          FROM api_keys ak
-         WHERE ak.is_active = TRUE`
+         WHERE ak.key_preview = $1 AND ak.is_active = TRUE`,
+        [preview]
       );
 
       if (result.rowCount === 0) {
+        // No candidate with matching preview
         return reply.code(401).send({ error: 'Invalid API key' });
       }
 
-      // Find matching key by comparing plaintext against bcrypt hash
+      // Compare only against the small candidate set
       let matchedKey: any = null;
       for (const row of result.rows) {
         const isMatch = await bcrypt.compare(apiKeyHeader, row.key_hash);

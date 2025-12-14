@@ -87,10 +87,21 @@ fastify.register(async (instance) => {
       const schemaRes = await instance.validateEvent(request, reply);
       if (schemaRes) return schemaRes;
 
-      // Optional: verify signature if provided
-      if (process.env.AIBBAR_SECRET) {
+      // Signature verification: mandatory in non-skip (prod) mode, optional in SKIP_INFRA
+      const skipInfraInner = process.env.SKIP_INFRA === 'true';
+      if (!skipInfraInner) {
+        if (!process.env.AIBBAR_SECRET) {
+          instance.log.error('AIBBAR_SECRET not set but required in production');
+          return reply.code(500).send({ error: 'Server misconfigured: AIBBAR_SECRET required in production' });
+        }
         const sigRes = await instance.verifySignature(request, reply);
         if (sigRes) return sigRes;
+      } else {
+        // In dev mode, verify only if secret is explicitly set
+        if (process.env.AIBBAR_SECRET) {
+          const sigRes = await instance.verifySignature(request, reply);
+          if (sigRes) return sigRes;
+        }
       }
 
       try {
