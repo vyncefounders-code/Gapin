@@ -14,6 +14,7 @@ import apiKeyValidator from './plugins/apiKeyValidator';
 import jwtAuth from './plugins/jwtAuth';
 import eventValidator from './plugins/eventValidator';
 import signatureVerifier from './plugins/signatureVerifier';
+import { aibbarRoutes } from "./routes/aibbar";
 
 const fastify = Fastify({ logger: true });
 
@@ -23,6 +24,7 @@ fastify.register(apiKeyValidator);
 fastify.register(jwtAuth);
 fastify.register(eventValidator);
 fastify.register(signatureVerifier);
+fastify.register(aibbarRoutes);
 
 // Kafka Setup
 const kafka = new Kafka({
@@ -35,6 +37,9 @@ const consumer = kafka.consumer({ groupId: 'gapin-group' });
 
 const eventPublisher = new EventPublisher(producer);
 const eventConsumer = new EventConsumer(consumer);
+
+fastify.decorate("kafkaProducer", producer);
+
 
 // Validation helper
 const validateEventPayload = (topic: string, message: any): { valid: boolean; error?: string } => {

@@ -9,28 +9,34 @@ declare module 'fastify' {
 
 const signatureVerifier: FastifyPluginAsync = async (fastify) => {
   fastify.decorate('verifySignature', async (request: FastifyRequest, reply: FastifyReply) => {
+    const SKIP_INFRA = process.env.SKIP_INFRA === 'true';
     const secret = process.env.AIBBAR_SECRET;
-    const sig = (request.headers['x-aibbar-signature'] as string) || '';
 
-    if (!secret) {
-      fastify.log.warn('AIBBAR_SECRET not set; skipping signature verification');
-      return;
+    // Signature REQUIRED unless SKIP_INFRA=true
+    if (!SKIP_INFRA && !secret) {
+      fastify.log.error('AIBBAR_SECRET is missing. Signature verification cannot run.');
+      return reply.code(500).send({ error: 'Server misconfiguration: signature secret missing' });
     }
 
-    if (!sig) {
+    // If SKIP_INFRA: allow no signature
+    if (SKIP_INFRA) return;
+
+    const signature = request.headers['x-aibbar-signature'];
+    if (!signature) {
       return reply.code(401).send({ error: 'Missing x-aibbar-signature header' });
     }
 
-    // compute HMAC over raw body if available, else JSON stringify message
-    // Fastify does not expose raw body by default; expect SDK to sign JSON string of message
-    const body = (request.body as any) || {};
-    const payload = JSON.stringify(body);
-    const hmac = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+    const payload = JSON.stringify(request.body ?? {});
+    const computed = crypto.createHmac('sha256', secret!).update(payload).digest('hex');
 
-    // constant time compare
-    const hmacBuf = Buffer.from(hmac, 'hex');
-    const sigBuf = Buffer.from(sig, 'hex');
-    if (hmacBuf.length !== sigBuf.length || !crypto.timingSafeEqual(hmacBuf, sigBuf)) {
+    const sigBuf = Buffer.from(signature as string, 'hex');
+    const cmpBuf = Buffer.from(computed, 'hex');
+
+    if (
+      sigBuf.length !== cmpBuf.length ||
+      !crypto.timingSafeEqual(sigBuf, cmpBuf)
+    ) {
+      fastify.log.warn('Invalid event signature received');
       return reply.code(401).send({ error: 'Invalid signature' });
     }
   });
