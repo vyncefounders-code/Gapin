@@ -6,9 +6,11 @@ import healthRoutes from './routes/health';
 import userRoutes from './routes/user';
 import authRoutes from './routes/auth';
 import keyRoutes from './routes/key';
+import apiKeysRoutes from './routes/apikeys';
 import { EventPublisher } from './events/publish';
 import { EventConsumer } from './events/consume';
 import apiKeyAuth from './plugins/apiKeyAuth';
+import jwtAuth from './plugins/jwtAuth';
 import eventValidator from './plugins/eventValidator';
 import signatureVerifier from './plugins/signatureVerifier';
 
@@ -16,6 +18,7 @@ const fastify = Fastify({ logger: true });
 
 // Register plugins
 fastify.register(apiKeyAuth);
+fastify.register(jwtAuth);
 fastify.register(eventValidator);
 fastify.register(signatureVerifier);
 
@@ -50,6 +53,7 @@ fastify.register(authRoutes);
 fastify.register(async (instance) => {
   instance.register(keyRoutes);
   instance.register(userRoutes);
+  instance.register(apiKeysRoutes);
 
   // Publish Event (protected)
   instance.post(
