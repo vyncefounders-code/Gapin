@@ -36,6 +36,7 @@ GAPIN gateway MVP is **functionally complete** with all core features implemente
 - Validates credentials with bcrypt.compare
 - Returns JWT token (7-day expiry, configurable)
 - Rate limiting not yet applied to auth routes (TODO)
+ - Rate limiting: ✅ Applied to `/auth/register` and `/auth/login` (per-IP)
 
 #### JWT Authentication Plugin
 - **Status:** ✅ Complete
@@ -45,9 +46,8 @@ GAPIN gateway MVP is **functionally complete** with all core features implemente
 - Returns 401 on invalid/expired tokens
 
 #### User Profile (`GET /auth/me`)
-- **Status:** ⚠️ Incomplete
-- Currently returns API key info instead of user info
-- **TODO:** Update to use JWT auth and return user data
+ - **Status:** ✅ Complete
+ - Returns authenticated user info via JWT (`authenticateUser`)
 
 ### 2. API Key Management
 
@@ -88,8 +88,8 @@ GAPIN gateway MVP is **functionally complete** with all core features implemente
 - **Validation:**
   - Topic: non-empty string
   - Message: valid JSON object
-  - Schema validation (AJV, optional)
-  - HMAC signature verification (optional, if AIBBAR_SECRET set)
+  - Schema validation: ✅ AJV strict schema enforced (required fields)
+  - HMAC signature verification: ✅ Mandatory in production (AIBBAR_SECRET required)
 - **Rate Limiting:** Per API key, Redis-backed with in-memory fallback
   - Default: 100 req/60s per key (configurable)
   - Returns rate limit headers: X-RateLimit-Limit, Remaining, Reset
@@ -138,39 +138,25 @@ GAPIN gateway MVP is **functionally complete** with all core features implemente
 ## ⚠️ Known Issues & Limitations
 
 ### 1. API Key Validation Performance (⚠️ Medium Priority)
-**Issue:** apiKeyValidator queries all active API keys and compares in memory
-- Current: `SELECT * FROM api_keys WHERE is_active = TRUE` (expensive at scale)
-- **TODO:** Use key_hash direct lookup instead (requires storing preview separately)
-- **Impact:** O(n) bcrypt comparisons, not suitable for 1000+ active keys
+**Issue (mitigated):** validator previously scanned all active keys which was O(n) bcrypt compares.
+ - **Fix implemented:** code now narrows candidates by `key_preview` (first 8 chars) and compares only the small candidate set.
+ - **Migration:** `006_add_index_key_preview.sql` added to index `key_preview`. Apply migrations to activate.
+ - **Note:** For stronger cryptographic lookups consider storing an HMAC of the key for direct indexed lookup.
 
-**Fix:**
-```sql
--- Store key prefix in DB for fast lookup
-SELECT key_hash FROM api_keys WHERE user_id IN (
-  SELECT DISTINCT user_id FROM api_keys 
-  WHERE key_preview = 'abc12345'
-) AND is_active = TRUE
-```
-
-### 2. Missing Rate Limiting on Auth Routes
-- `/auth/register` and `/auth/login` are not rate-limited
-- **TODO:** Add endpoint-level rate limiting to prevent brute force
+### 2. Rate Limiting on Auth Routes
+- `/auth/register` and `/auth/login` are now rate-limited (per-IP). See `src/routes/auth.ts`.
 
 ### 3. /auth/me Returns Wrong Data
-- Currently returns apiKey info instead of user info
-- **TODO:** Update to check JWT auth and return user object
+- **Fixed:** now returns authenticated `user` object via JWT (see `src/routes/auth.ts`).
 
 ### 4. Event Schema Validation
-- Validator uses AJV but schema is too permissive
-- **TODO:** Define strict AIBBAR event schema with required fields
+- **Fixed:** AJV schema tightened (requires `event_type`, `timestamp`, `action`; additional properties disallowed).
 
-### 5. Signature Verification Optional
-- AIBBAR_SECRET-based signature verification only applied if env var set
-- **TODO:** Make mandatory in production; only optional in SKIP_INFRA
+### 5. Signature Verification
+- **Changed:** Signature verification is now mandatory in production (non-SKIP_INFRA). In dev (`SKIP_INFRA=true`) it remains optional.
 
-### 6. No Event Consumption
-- Kafka consumer is connected but not actively consuming
-- **TODO:** Implement background event consumer for processing
+### 6. Event Consumption
+- **Implemented:** `EventConsumer` class implemented and wired to log messages on consume. Full end-to-end verification pending infra.
 
 ### 7. Missing Dashboard Stats APIs
 - No endpoints for: event counts, key usage, rate limit stats
