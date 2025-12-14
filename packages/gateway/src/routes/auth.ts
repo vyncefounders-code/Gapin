@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import bcrypt from "bcrypt";
 import pool from "../db/client";
+import jwt from 'jsonwebtoken';
 
 interface RegisterBody {
   email: string;
@@ -113,9 +114,15 @@ export default async function authRoutes(fastify: FastifyInstance) {
           return reply.code(401).send({ error: "Invalid credentials" });
         }
 
-        // No JWT — session handled by NextAuth or dashboard API
+        // Sign JWT and return token + basic user info
+        const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret_change_in_production';
+        const JWT_EXPIRY = process.env.JWT_EXPIRY || '7d';
+
+        const token = (jwt as any).sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRY, subject: String(user.id) });
+
         return reply.send({
           success: true,
+          token,
           user: {
             id: user.id,
             email: user.email,

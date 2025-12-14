@@ -3,8 +3,24 @@ import pool from '../db/client';
 
 export default async function healthRoutes(fastify: FastifyInstance) {
   fastify.get('/health', async (request, reply) => {
+    const skipInfra = process.env.SKIP_INFRA === 'true' || process.env.NODE_ENV === 'test';
+
+    if (skipInfra) {
+      return {
+        status: 'healthy',
+        mode: 'skip-infra',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+        deps: {
+          database: 'skipped',
+          kafka: 'skipped',
+          redis: 'skipped',
+        },
+      };
+    }
+
     try {
-      // Check database connectivity
+      // Database connectivity
       const dbCheck = await pool.query('SELECT NOW()');
       if (!dbCheck) {
         return reply.code(503).send({
@@ -26,12 +42,15 @@ export default async function healthRoutes(fastify: FastifyInstance) {
 
       return {
         status: 'healthy',
+        mode: 'full',
+        uptime: process.uptime(),
         timestamp: new Date().toISOString(),
-        services: {
+        deps: {
           database: 'connected',
-          kafka: 'connected',
-          events_table: eventsTableExists ? 'ready' : 'not_initialized',
+          kafka: 'unknown',
+          redis: 'unknown',
         },
+        events_table: eventsTableExists ? 'ready' : 'not_initialized',
       };
     } catch (error) {
       return reply.code(503).send({

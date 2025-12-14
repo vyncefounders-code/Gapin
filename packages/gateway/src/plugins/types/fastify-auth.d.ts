@@ -7,6 +7,13 @@ declare module "fastify" {
       reply: any
     ) => Promise<void> | void;
 
+    authenticateUser: (
+      request: any,
+      reply: any
+    ) => Promise<void> | void;
+
+    generateJwt?: (payload: object) => string;
+
     rateLimitMap: Map<
       string,
       {
