@@ -75,12 +75,13 @@ const apiKeyAuth: FastifyPluginAsync = async (fastify) => {
       };
 
       /* ---------------------------------------
-         5️⃣ Update last_used_at
+         5️⃣ Update last_used_at (await + error handling)
       ---------------------------------------- */
-      pool.query(
-        `UPDATE api_keys SET last_used_at = NOW() WHERE key_hash = $1`,
-        [keyHash]
-      );
+      try {
+        await pool.query(`UPDATE api_keys SET last_used_at = NOW() WHERE key_hash = $1`, [keyHash]);
+      } catch (err) {
+        fastify.log.warn({ err }, 'Failed to update last_used_at for API key');
+      }
     }
   );
 };
