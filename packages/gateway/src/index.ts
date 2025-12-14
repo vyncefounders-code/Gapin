@@ -9,11 +9,15 @@ import keyRoutes from './routes/key';
 import { EventPublisher } from './events/publish';
 import { EventConsumer } from './events/consume';
 import apiKeyAuth from './plugins/apiKeyAuth';
+import eventValidator from './plugins/eventValidator';
+import signatureVerifier from './plugins/signatureVerifier';
 
 const fastify = Fastify({ logger: true });
 
 // Register plugins
 fastify.register(apiKeyAuth);
+fastify.register(eventValidator);
+fastify.register(signatureVerifier);
 
 // Kafka Setup
 const kafka = new Kafka({
@@ -59,6 +63,16 @@ fastify.register(async (instance) => {
       if (!validation.valid) {
         instance.log.warn({ topic, message, error: validation.error }, 'Invalid event payload');
         return reply.code(400).send({ error: validation.error });
+      }
+
+      // Validate event schema (AIBBAR events)
+      const schemaRes = await instance.validateEvent(request, reply);
+      if (schemaRes) return schemaRes;
+
+      // Optional: verify signature if provided
+      if (process.env.AIBBAR_SECRET) {
+        const sigRes = await instance.verifySignature(request, reply);
+        if (sigRes) return sigRes;
       }
 
       try {

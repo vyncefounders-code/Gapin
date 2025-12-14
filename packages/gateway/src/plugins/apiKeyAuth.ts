@@ -1,6 +1,7 @@
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import crypto from "crypto";
 import pool from "../db/client";
+import limiter from "../lib/rateLimiter";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -8,14 +9,10 @@ declare module "fastify" {
       request: FastifyRequest,
       reply: FastifyReply
     ) => Promise<void>;
-    rateLimitMap: Map<string, { count: number; ts: number }>;
   }
 }
 
 const apiKeyAuth: FastifyPluginAsync = async (fastify) => {
-  // In-memory rate limit store
-  fastify.decorate("rateLimitMap", new Map());
-
   fastify.decorate(
     "authenticate",
     async function authenticate(
@@ -49,21 +46,23 @@ const apiKeyAuth: FastifyPluginAsync = async (fastify) => {
       const apiKeyRow = result.rows[0];
 
       /* ---------------------------------------
-         3️⃣ Simple Rate Limit (per key)
+         3️⃣ Rate Limit (Redis-backed, per api_key id)
       ---------------------------------------- */
-      const now = Date.now();
-      const WINDOW = 60000; // 1 minute
+      const WINDOW_SEC = 60; // 1 minute window
       const LIMIT = 1000;
-      const entry = fastify.rateLimitMap.get(rawKey) || { count: 0, ts: now };
-
-      if (now - entry.ts > WINDOW) {
-        fastify.rateLimitMap.set(rawKey, { count: 1, ts: now });
-      } else {
-        if (entry.count >= LIMIT) {
-          return reply.code(429).send({ error: "Rate limit exceeded" });
+      try {
+        const keyId = String(apiKeyRow.id);
+        const res = await limiter.increment(keyId, WINDOW_SEC, LIMIT);
+        // Set rate limit headers
+        reply.header('X-RateLimit-Limit', String(LIMIT));
+        reply.header('X-RateLimit-Remaining', String(res.remaining));
+        reply.header('X-RateLimit-Reset', String(res.reset));
+        if (!res.allowed) {
+          return reply.code(429).send({ error: 'Rate limit exceeded' });
         }
-        entry.count++;
-        fastify.rateLimitMap.set(rawKey, entry);
+      } catch (limErr) {
+        // If limiter fails, allow request but log warning
+        fastify.log.warn({ limErr }, 'Rate limiter error - allowing request');
       }
 
       /* ---------------------------------------

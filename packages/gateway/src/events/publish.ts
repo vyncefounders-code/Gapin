@@ -15,7 +15,8 @@ export class EventPublisher {
       });
       return { success: true };
     } catch (error) {
-      throw new Error('Failed to publish event');
+      const errMsg = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to publish event: ${errMsg}`);
     }
   }
 }

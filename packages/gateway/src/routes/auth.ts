@@ -45,7 +45,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
           [email]
         );
 
-        if (existing.rowCount > 0) {
+        if (existing.rowCount && existing.rowCount > 0) {
           return reply.code(400).send({
             error: "User already exists"
           });
