@@ -12,6 +12,11 @@ declare module "fastify" {
       reply: any
     ) => Promise<void> | void;
 
+    validateApiKey: (
+      request: any,
+      reply: any
+    ) => Promise<void> | void;
+
     generateJwt?: (payload: object) => string;
 
     rateLimitMap: Map<

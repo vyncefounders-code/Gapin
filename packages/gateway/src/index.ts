@@ -10,6 +10,7 @@ import apiKeysRoutes from './routes/apikeys';
 import { EventPublisher } from './events/publish';
 import { EventConsumer } from './events/consume';
 import apiKeyAuth from './plugins/apiKeyAuth';
+import apiKeyValidator from './plugins/apiKeyValidator';
 import jwtAuth from './plugins/jwtAuth';
 import eventValidator from './plugins/eventValidator';
 import signatureVerifier from './plugins/signatureVerifier';
@@ -18,6 +19,7 @@ const fastify = Fastify({ logger: true });
 
 // Register plugins
 fastify.register(apiKeyAuth);
+fastify.register(apiKeyValidator);
 fastify.register(jwtAuth);
 fastify.register(eventValidator);
 fastify.register(signatureVerifier);
@@ -55,18 +57,23 @@ fastify.register(async (instance) => {
   instance.register(userRoutes);
   instance.register(apiKeysRoutes);
 
-  // Publish Event (protected)
+  // Publish Event (production version with API key auth)
   instance.post(
     '/events/publish',
     { preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
-        if (typeof (instance as any).authenticate === 'function') {
-          return (instance as any).authenticate(request as any, reply as any);
+        if (typeof (instance as any).validateApiKey === 'function') {
+          return (instance as any).validateApiKey(request as any, reply as any);
         }
-        instance.log.warn('authenticate decorator not available; skipping auth');
+        instance.log.warn('validateApiKey decorator not available; skipping auth');
         return;
       }
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const apiKey = (request as any).apiKey;
+      if (!apiKey) {
+        return reply.code(401).send({ error: 'API key required' });
+      }
+
       const { topic, message } = request.body as { topic: string; message: any };
 
       // Validate input
@@ -94,27 +101,30 @@ fastify.register(async (instance) => {
           timestamp: new Date().toISOString(),
         };
 
-        // Publish to Kafka (skip in dev mode)
+        // Publish to Kafka and persist to DB (skip in dev mode)
         const skipInfra = process.env.SKIP_INFRA === 'true';
         if (!skipInfra) {
-          const result = await eventPublisher.publish(topic, eventData);
+          // Publish to Kafka with topic prefixed by user_id
+          const kafkaTopic = `events.${apiKey.user_id}.${topic}`;
+          await eventPublisher.publish(kafkaTopic, eventData);
 
-          // Store to database (await and log on error)
+          // Store to database with user_id and key_id
           try {
             await pool.query(
-              'INSERT INTO events (topic, message, created_at) VALUES ($1, $2, NOW())',
-              [topic, JSON.stringify(eventData)]
+              `INSERT INTO events (user_id, key_id, topic, message, created_at)
+               VALUES ($1, $2, $3, $4, NOW())`,
+              [apiKey.user_id, apiKey.id, topic, JSON.stringify(eventData)]
             );
           } catch (dbErr) {
             instance.log.warn({ eventId, topic, err: dbErr }, 'Failed to store event in database');
           }
 
-          instance.log.info({ eventId }, `Event published to ${topic}`);
-          return { ...result, eventId };
+          instance.log.info({ eventId, user_id: apiKey.user_id, key_id: apiKey.id }, `Event published to ${topic}`);
+          return { success: true, eventId, topic, message: 'Event published' };
         } else {
           // Dev mode: return mock success response
-          instance.log.info({ eventId }, `[DEV] Event would be published to ${topic}`);
-          return { success: true, eventId, message: 'Dev mode: event not persisted' };
+          instance.log.info({ eventId }, `[DEV] Event would be published to events.${apiKey.user_id}.${topic}`);
+          return { success: true, eventId, topic, message: 'Dev mode: event not persisted' };
         }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -124,18 +134,23 @@ fastify.register(async (instance) => {
     }
   );
 
-  // Read Events (protected)
+  // Read Events (production version with API key auth)
   instance.get(
     '/events/read',
     { preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
-        if (typeof (instance as any).authenticate === 'function') {
-          return (instance as any).authenticate(request as any, reply as any);
+        if (typeof (instance as any).validateApiKey === 'function') {
+          return (instance as any).validateApiKey(request as any, reply as any);
         }
-        instance.log.warn('authenticate decorator not available; skipping auth');
+        instance.log.warn('validateApiKey decorator not available; skipping auth');
         return;
       }
     },
-    async (_request: FastifyRequest, reply: FastifyReply) => {
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const apiKey = (request as any).apiKey;
+      if (!apiKey) {
+        return reply.code(401).send({ error: 'API key required' });
+      }
+
       try {
         const skipInfra = process.env.SKIP_INFRA === 'true';
         if (skipInfra) {
@@ -145,9 +160,36 @@ fastify.register(async (instance) => {
             message: 'Dev mode: no database connected' 
           };
         }
-        
-        const result = await pool.query('SELECT * FROM events ORDER BY created_at DESC LIMIT 10');
-        return { events: result.rows };
+
+        // Parse optional query params
+        const topic = (request.query as any).topic || null;
+        const since = (request.query as any).since || null;
+        const limit = parseInt((request.query as any).limit || '100');
+
+        // Build query: events for this user
+        let query = `SELECT id, topic, message, key_id, created_at FROM events WHERE user_id = $1`;
+        const params: any[] = [apiKey.user_id];
+
+        if (topic) {
+          params.push(topic);
+          query += ` AND topic = $${params.length}`;
+        }
+
+        if (since) {
+          params.push(since);
+          query += ` AND created_at > $${params.length}`;
+        }
+
+        query += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
+        params.push(limit);
+
+        const result = await pool.query(query, params);
+
+        return {
+          success: true,
+          count: result.rows.length,
+          events: result.rows
+        };
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         instance.log.error({ error: errorMsg }, 'Failed to read events');
