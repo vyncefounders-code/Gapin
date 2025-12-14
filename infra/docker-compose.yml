@@ -29,5 +29,15 @@ services:
       - "9092:9092"
       - "9644:9644"
 
+  redis:
+    image: redis:7-alpine
+    container_name: gapin_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
 volumes:
   pgdata:
+  redis_data:
