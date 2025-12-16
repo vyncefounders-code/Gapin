@@ -8,11 +8,10 @@ WORKDIR /app
 # Copy workspace root files (package.json etc.)
 COPY package*.json ./
 COPY tsconfig*.json ./
-COPY .npmrc ./
 
 # Copy only the gateway package
 COPY packages/gateway ./packages/gateway
-COPY packages/shared ./packages/shared
+
 
 # Install dependencies (only production + workspace)
 RUN npm install --workspaces --include-workspace-root

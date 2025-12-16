@@ -8,19 +8,15 @@ declare module 'fastify' {
   }
 }
 
-const ajv = new Ajv({ 
-  allErrors: true, 
-  coerceTypes: true, 
-  removeAdditional: 'all' 
+const ajv = new Ajv({
+  allErrors: true,
+  coerceTypes: true,
+  removeAdditional: 'all'
 });
 
-<<<<<<< Updated upstream
-// Strict AIBBAR event schema: require core fields and disallow unknown props
-=======
 addFormats(ajv);
 
 // Strict AIBBAR event schema
->>>>>>> Stashed changes
 const eventSchema = {
   type: 'object',
   properties: {
@@ -35,6 +31,7 @@ const eventSchema = {
         'system.event'
       ]
     },
+
     ai_id: { type: 'string' },
     ai_version: { type: 'string' },
 
@@ -78,7 +75,6 @@ const eventSchema = {
     },
 
     timestamp: { type: 'string', format: 'date-time' },
-
     signature: { type: 'string' },
 
     metadata: {
@@ -94,12 +90,9 @@ const eventSchema = {
       additionalProperties: false
     }
   },
-<<<<<<< Updated upstream
-  required: ['event_type', 'timestamp', 'action'],
-=======
 
+  // FINAL CORRECT REQUIRED LIST
   required: ['event_type', 'timestamp', 'signature'],
->>>>>>> Stashed changes
   additionalProperties: false
 };
 
@@ -120,11 +113,11 @@ const eventValidator: FastifyPluginAsync = async (fastify) => {
       });
     }
 
-    // Timestamp must be not older than 24 hours and not in the future too much
+    // Timestamp must be recent and not too far ahead
     const eventTime = new Date(body.timestamp).getTime();
     const now = Date.now();
 
-    if (eventTime > now + 5_000) {
+    if (eventTime > now + 5000) {
       return reply.code(400).send({ error: 'Timestamp cannot be in the future' });
     }
 
