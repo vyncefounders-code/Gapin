@@ -1,0 +1,76 @@
+version: "3.9"
+
+services:
+  gateway:
+    build:
+      context: ./packages/gateway
+      dockerfile: Dockerfile
+    container_name: gapin-gateway
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+
+      # Database
+      DATABASE_URL: postgres://gapin:password@postgres:5432/gapin
+
+      # Redis
+      REDIS_URL: redis://redis:6379
+
+      # Kafka Broker
+      KAFKA_BROKER: redpanda:9092
+
+      # Secrets
+      JWT_SECRET: "CHANGE_ME_IN_PROD"
+      AIBBAR_SECRET: "CHANGE_ME_TOO"
+      AIBBAR_SIGNING_SECRET: "CHANGE_ME_3"
+
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+      - redis
+      - redpanda
+
+  postgres:
+    image: postgres:15
+    container_name: gapin-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: gapin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: gapin
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: gapin-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: gapin-redpanda
+    command:
+      - redpanda start
+      - --overprovisioned
+      - --smp 1
+      - --memory 1G
+      - --reserve-memory 0M
+      - --node-id 0
+      - --check=false
+    ports:
+      - "9092:9092"
+    volumes:
+      - redpandadata:/var/lib/redpanda/data
+
+volumes:
+  pgdata:
+  redisdata:
+  redpandadata:

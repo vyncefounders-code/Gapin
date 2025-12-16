@@ -1,0 +1,82 @@
+version: "3.9"
+
+services:
+  gateway:
+    container_name: gapin-gateway-dev
+    build:
+      context: ./packages/gateway
+      dockerfile: Dockerfile.dev
+    command: npm run dev
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+      SKIP_INFRA: "false"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gapin
+      KAFKA_BROKER: redpanda:9092
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: "dev-secret"
+      AIBBAR_SECRET: "dev-signing-secret"
+    depends_on:
+      - postgres
+      - redpanda
+      - redis
+    volumes:
+      - ./packages/gateway:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15
+    container_name: gapin-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gapin
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: gapin-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  redpanda:
+    image: docker.redpanda.com/vectorized/redpanda:latest
+    container_name: gapin-redpanda
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - "1G"
+      - --reserve-memory
+      - "0M"
+      - --node-id
+      - "0"
+      - --check=false
+    ports:
+      - "9092:9092"
+      - "9644:9644"
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+  redis_data:
+  redpanda_data:
