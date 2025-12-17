@@ -29,7 +29,7 @@ fastify.register(aibbarRoutes);
 // Kafka Setup
 const kafka = new Kafka({
   clientId: 'gapin-gateway',
-  brokers: [process.env.KAFKA_BROKER || 'localhost:9092'],
+  brokers: [process.env.KAFKA_BROKER || 'redpanda:9092'],
 });
 
 const producer = kafka.producer();
