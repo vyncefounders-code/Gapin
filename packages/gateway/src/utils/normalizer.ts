@@ -10,7 +10,7 @@ const PII_KEYS = [
   "password",
   "api_key",
   "secret",
-  "ssn",
+  "ssn", 
   "address",
   "auth",
   "credentials"

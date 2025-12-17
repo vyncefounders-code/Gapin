@@ -39,7 +39,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: gapin
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -54,20 +54,16 @@ services:
     restart: unless-stopped
 
   redpanda:
-    image: docker.redpanda.com/vectorized/redpanda:latest
+    image: docker.redpanda.com/redpandadata/redpanda:latest
     container_name: gapin-redpanda
     command:
       - redpanda
       - start
       - --overprovisioned
-      - --smp
-      - "1"
-      - --memory
-      - "1G"
-      - --reserve-memory
-      - "0M"
-      - --node-id
-      - "0"
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
       - --check=false
     ports:
       - "9092:9092"

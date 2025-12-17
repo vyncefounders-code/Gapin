@@ -1,8 +1,8 @@
-import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
-import Ajv from 'ajv';
-import addFormats from 'ajv-formats';
+import { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
+import Ajv from "ajv";
+import addFormats from "ajv-formats";
 
-declare module 'fastify' {
+declare module "fastify" {
   interface FastifyInstance {
     validateEvent: (request: FastifyRequest, reply: FastifyReply) => Promise<any>;
   }
@@ -11,120 +11,127 @@ declare module 'fastify' {
 const ajv = new Ajv({
   allErrors: true,
   coerceTypes: true,
-  removeAdditional: 'all'
+  removeAdditional: "all"
 });
 
 addFormats(ajv);
 
-// Strict AIBBAR event schema
 const eventSchema = {
-  type: 'object',
+  type: "object",
   properties: {
     event_type: {
-      type: 'string',
+      type: "string",
       enum: [
-        'ai.action',
-        'ai.decision',
-        'ai.error',
-        'ai.query',
-        'ai.response',
-        'system.event'
+        "ai.action",
+        "ai.decision",
+        "ai.error",
+        "ai.query",
+        "ai.response",
+        "system.event"
       ]
     },
 
-    ai_id: { type: 'string' },
-    ai_version: { type: 'string' },
+    ai_id: { type: "string" },
+    ai_version: { type: "string" },
 
     action: {
-      type: 'object',
+      type: "object",
       properties: {
-        function: { type: 'string' },
-        input: { type: ['object', 'null'] },
-        output: { type: ['object', 'null'] },
-        latency_ms: { type: 'number' },
-        model: { type: 'string' },
-        tokens_used: { type: 'number' }
+        function: { type: "string" },
+        input: { type: ["object", "null"] },
+        output: { type: ["object", "null"] },
+        latency_ms: { type: "number" },
+        model: { type: "string" },
+        tokens_used: { type: "number" }
       },
-      required: ['function'],
+      required: ["function"],
       additionalProperties: false
     },
 
     decision: {
-      type: 'object',
+      type: "object",
       properties: {
-        type: { type: 'string' },
-        logic: { type: 'string' },
-        options: { type: 'array' },
+        type: { type: "string" },
+        logic: { type: "string" },
+        options: { type: "array" },
         chosen: {},
-        confidence: { type: 'number' }
+        confidence: { type: "number" }
       },
-      required: ['type'],
+      required: ["type"],
       additionalProperties: false
     },
 
     error: {
-      type: 'object',
+      type: "object",
       properties: {
-        code: { type: 'string' },
-        message: { type: 'string' },
-        stack: { type: 'string' },
-        recoverable: { type: 'boolean' }
+        code: { type: "string" },
+        message: { type: "string" },
+        stack: { type: "string" },
+        recoverable: { type: "boolean" }
       },
-      required: ['code', 'message'],
+      required: ["code", "message"],
       additionalProperties: false
     },
 
-    timestamp: { type: 'string', format: 'date-time' },
-    signature: { type: 'string' },
+    timestamp: { type: "string", format: "date-time" },
+
+    signature: { type: "string" },
 
     metadata: {
-      type: 'object',
+      type: "object",
       properties: {
-        user_id: { type: 'string' },
-        session_id: { type: 'string' },
-        request_id: { type: 'string' },
-        source_ip: { type: 'string' },
-        country: { type: 'string' },
-        region: { type: 'string' }
+        user_id: { type: "string" },
+        session_id: { type: "string" },
+        request_id: { type: "string" },
+        source_ip: { type: "string" },
+        country: { type: "string" },
+        region: { type: "string" }
       },
       additionalProperties: false
     }
   },
 
-  // FINAL CORRECT REQUIRED LIST
-  required: ['event_type', 'timestamp', 'signature'],
+  required: ["event_type", "timestamp", "signature"],
   additionalProperties: false
 };
 
 const validate = ajv.compile(eventSchema);
 
 const eventValidator: FastifyPluginAsync = async (fastify) => {
-  fastify.decorate('validateEvent', async (request: FastifyRequest, reply: FastifyReply) => {
-    const body = request.body as any;
+  fastify.decorate(
+    "validateEvent",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = request.body as any;
 
-    // Schema validation
-    const valid = validate(body);
+      const valid = validate(body);
 
-    if (!valid) {
-      fastify.log.warn({ errors: validate.errors }, 'AIBBAR event schema validation failed');
-      return reply.code(400).send({
-        error: 'Invalid event payload',
-        details: validate.errors
-      });
+      if (!valid) {
+        return reply.code(400).send({
+          error: "Invalid event payload",
+          details: validate.errors
+        });
+      }
+
+      //
+      // TIMESTAMP CHECK (FIXED TYPE ERROR)
+      //
+      const timestampStr = String(body.timestamp);
+      const eventTime = new Date(timestampStr).getTime();
+      const now = Date.now();
+
+      if (isNaN(eventTime)) {
+        return reply.code(400).send({ error: "Invalid timestamp format" });
+      }
+
+      if (eventTime > now + 5000) {
+        return reply.code(400).send({ error: "Timestamp cannot be in the future" });
+      }
+
+      if (now - eventTime > 24 * 60 * 60 * 1000) {
+        return reply.code(400).send({ error: "Timestamp is older than 24 hours" });
+      }
     }
-
-    // Timestamp must be recent and not too far ahead
-    const eventTime = new Date(body.timestamp).getTime();
-    const now = Date.now();
-
-    if (eventTime > now + 5000) {
-      return reply.code(400).send({ error: 'Timestamp cannot be in the future' });
-    }
-
-    if (now - eventTime > 24 * 60 * 60 * 1000) {
-      return reply.code(400).send({ error: 'Timestamp is older than 24 hours' });
-    }
-  });
+  );
 };
 
 export default eventValidator;

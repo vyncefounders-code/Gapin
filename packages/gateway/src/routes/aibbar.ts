@@ -1,85 +1,99 @@
 import { FastifyPluginAsync } from "fastify";
-import { verifySignature } from "../utils/signer";
-import { validateAibbarEvent } from "../validators/aibbarValidator";
+import { verifyEventSignature } from "../utils/signer";
+import { validateAibbarEvent } from "../validators/aibbarValidators";
 import pool from "../db/client";
 import { randomUUID } from "crypto";
-import { normalizeEvent } from "../utils/normalizer";
+import { normalizeAibbarEvent } from "../utils/normalizer";
 
 export const aibbarRoutes: FastifyPluginAsync = async (fastify) => {
-  
+
   fastify.post("/aibbar/events", async (request, reply) => {
     const event = request.body as any;
 
-    // 1. SCHEMA VALIDATION
+    //
+    // 1. VALIDATE SCHEMA
+    //
     const valid = validateAibbarEvent(event);
     if (!valid) {
       return reply.code(400).send({
         error: "Invalid AIBBAR event",
-        details: validateAibbarEvent.errors,
+        details: (validateAibbarEvent as any).errors || []
       });
     }
 
-    // 2. SIGNATURE VERIFICATION
+    //
+    // 2. VERIFY SIGNATURE
+    //
     const secret = process.env.AIBBAR_SIGNING_SECRET;
-
     if (!secret) {
-      fastify.log.warn("AIBBAR_SIGNING_SECRET missing — event signature cannot be verified");
-      return reply.code(500).send({ error: "Server misconfigured: missing signing secret" });
+      fastify.log.error("AIBBAR_SIGNING_SECRET missing");
+      return reply.code(500).send({ error: "Server missing signing secret" });
     }
 
-    const ok = verifySignature(event, event.signature, secret);
+    const ok = verifyEventSignature(event, event.signature, secret);
     if (!ok) {
       return reply.code(401).send({ error: "Signature verification failed" });
     }
 
-    // 3. NORMALIZE EVENT (IMPORTANT PART OF TASK 5)
-    const normalized = normalizeEvent(event);
+    //
+    // 3. NORMALIZE EVENT
+    //
+    const normalized = normalizeAibbarEvent(event);
 
     // Assign server-side event ID
     const eventId = randomUUID();
     normalized.eventId = eventId;
 
-    // 4. STORE NORMALIZED EVENT IN DB
+    //
+    // 4. STORE IN DATABASE
+    //
     try {
       await pool.query(
         `INSERT INTO aibbar_events (id, ai_id, event_type, payload, signature, created_at)
          VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [eventId, normalized.ai_id, normalized.event_type, JSON.stringify(normalized), normalized.signature]
+        [
+          eventId,
+          normalized.ai_id,
+          normalized.event_type,
+          JSON.stringify(normalized),
+          normalized.signature
+        ]
       );
-    } catch (dbError) {
-      fastify.log.error({ err: dbError }, "Failed to insert AIBBAR event into database");
-      return reply.code(500).send({ error: "Failed to store event in database" });
+    } catch (err) {
+      fastify.log.error({ err }, "Failed DB insert");
+      return reply.code(500).send({ error: "Database insert failed" });
     }
 
+    //
     // 5. PUBLISH TO KAFKA
+    //
     const skipInfra = process.env.SKIP_INFRA === "true";
 
     if (!skipInfra) {
-      try {
-        if (!fastify.kafkaProducer) {
-          fastify.log.error("Kafka producer not available on Fastify instance");
-          return reply.code(500).send({ error: "Kafka not initialized" });
-        }
+      if (!("kafkaProducer" in fastify)) {
+        fastify.log.error("Kafka producer missing on Fastify instance");
+        return reply.code(500).send({ error: "Kafka not available" });
+      }
 
-        await fastify.kafkaProducer.send({
+      try {
+        await (fastify as any).kafkaProducer.send({
           topic: "aibbar.events",
           messages: [
             {
               key: normalized.ai_id,
-              value: JSON.stringify(normalized),
-            },
-          ],
+              value: JSON.stringify(normalized)
+            }
+          ]
         });
-
-      } catch (kafkaError) {
-        fastify.log.error({ err: kafkaError }, "Failed to publish AIBBAR event to Kafka");
-        return reply.code(500).send({ error: "Failed to publish event to Kafka" });
+      } catch (err) {
+        fastify.log.error({ err }, "Kafka publish failed");
+        return reply.code(500).send({ error: "Kafka publish failed" });
       }
-    } else {
-      fastify.log.info("[DEV] SKIP_INFRA=true — Kafka publish skipped");
     }
 
+    //
     // 6. RESPONSE
+    //
     return reply.send({
       success: true,
       eventId,
