@@ -21,8 +21,6 @@ import { EventConsumer } from './events/consume';
 const fastify = Fastify({ logger: true });
 
 /* -------------------- Plugins -------------------- */
-fastify.register(apiKeyAuth);
-fastify.register(apiKeyValidator);
 fastify.register(jwtAuth);
 fastify.register(eventValidator);
 fastify.register(signatureVerifier);
@@ -82,6 +80,14 @@ const shutdown = async () => {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+fastify.get('/', async () => {
+  return {
+    name: 'GAPIN Gateway',
+    status: 'running',
+    version: 'v0.1',
+  };
+});
 
 /* -------------------- Start Server -------------------- */
 const start = async () => {
